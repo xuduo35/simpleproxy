@@ -18,7 +18,7 @@ http://cnodejs.org/topic/4f16442ccae1f4aa27001101
 
 >The MIT License (MIT)
 >
->Copyright (c) 2010 - 2013 Nodejitsu Inc.
+>Copyright (c) 2014 simpleproxy.
 >
 >Permission is hereby granted, free of charge, to any person obtaining a copy
 >of this software and associated documentation files (the "Software"), to deal
