@@ -6,7 +6,7 @@ run 'node testproxy.js' on your VPS.
 run 'node testproxy.js VPS_IP' on your local PC.
 ```
 ```
-set Proxy IP/port in web browser to VPS_IP/8893 on your local PC.
+set Proxy IP/port in web browser to 127.0.0.1/8893 on your local PC.
 ```
 Enjoy the journey.
 
