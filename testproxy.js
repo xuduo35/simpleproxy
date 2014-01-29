@@ -4,13 +4,19 @@ var local_port = 8894;
 var localflag = 0;
 
 if (process.argv.length >= 3) {
-    serverip = process.argv[2];
+    if (/^\d+\.\d+\.\d+\.\d+$/.test(process.argv[2])) {
+        serverip = process.argv[2];
+    } else if ((process.argv[2] == "--help") || (process.argv[2] != "localhost")) {
+        console.log("Usage:\n\tlocal pc:\trun - node testproxy.js\n\tremote pc:\tnode testproxy.js (localhost|remoteIP)\n")
+        return;
+    }
+
     local_port = 8893;
     localflag = 1;
 }
 
 //在本地创建一个server监听本地local_port端口
-net.createServer(function (client) {
+net.createServer({ allowHalfOpen: true}, function (client) {
     //首先监听浏览器的数据发送事件，直到收到的数据包含完整的http请求头
     var buffer = new Buffer(0);
     
@@ -69,9 +75,11 @@ net.createServer(function (client) {
                 server.write(data);
             }
         });
-	      	
+
         //建立到目标服务器的连接
-        var server = localflag ? net.createConnection(8894, serverip) : net.createConnection(req.port, req.host);
+        var server =  net.createConnection(
+            localflag ? { allowHalfOpen: true, port: 8894, host: serverip} : { allowHalfOpen: true, port: req.port, host: req.host}
+            );
 
         server.pause();
         
@@ -87,13 +95,25 @@ net.createServer(function (client) {
         });
 	      
         client.on("end", function () {
-            client.closeflag = 1
+            client.closeflag = 1;
+            server.end();
         });
         
         server.on("end", function () {
-            server.closeflag = 1
+            server.closeflag = 1;
+            client.end();
+        });
+
+        client.on("error", function () {
+            client.closeflag = 1;
+            server.destroy();
         });
         
+        server.on("error", function () {
+            server.closeflag = 1;
+            client.destroy();
+        });
+
         server.on("connect", function (socket) {
             client.resume();
             server.resume();
@@ -110,7 +130,7 @@ net.createServer(function (client) {
     }
 }).listen(local_port);
 
-console.log('Proxy server running at localhost:'+local_port);
+console.log('Proxy server running at ' + serverip + ':' + local_port);
 
 //处理各种错误
 process.on('uncaughtException', function (err) {
