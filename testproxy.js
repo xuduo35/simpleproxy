@@ -31,30 +31,30 @@ net.createServer(function (client) {
     function relay_connection(req) {
         console.log(req.method + ' ' + req.host + ':' + req.port);
         
-        //如果请求不是CONNECT方法（GET, POST），那么替换掉头部的一些东西
-        if (req.method != 'CONNECT') {
-            //先从buffer中取出头部
-            var _body_pos = buffer_find_body(buffer);
-            
-            if (_body_pos < 0) _body_pos = buffer.length;
-            
-            var header = buffer.slice(0, _body_pos).toString('utf8');
-            
-            //替换connection头
-            header = header.replace(/(proxy-)?connection\:.+\r\n/ig, '')
-                .replace(/Keep-Alive\:.+\r\n/i, '')
-                .replace("\r\n", '\r\nConnection: close\r\n');
-            
-            //替换网址格式(去掉域名部分)
-            if (req.httpVersion == '1.1') {
-                var url = req.path.replace(/http\:\/\/[^\/]+/, '');
-                if (url.path != url) header = header.replace(req.path, url);
-            }
-            
-            buffer = buffer_add(new Buffer(header, 'utf8'), buffer.slice(_body_pos));
-        }
-
         if (localflag) {
+	        //如果请求不是CONNECT方法（GET, POST），那么替换掉头部的一些东西
+	          if (req.method != 'CONNECT') {
+	              //先从buffer中取出头部
+	              var _body_pos = buffer_find_body(buffer);
+	            
+	              if (_body_pos < 0) _body_pos = buffer.length;
+	            
+	              var header = buffer.slice(0, _body_pos).toString('utf8');
+	            
+	              //替换connection头
+	              header = header.replace(/(proxy-)?connection\:.+\r\n/ig, '')
+	                  .replace(/Keep-Alive\:.+\r\n/i, '')
+	                  .replace("\r\n", '\r\nConnection: close\r\n');
+	            
+	              //替换网址格式(去掉域名部分)
+	              if (req.httpVersion == '1.1') {
+	                  var url = req.path.replace(/http\:\/\/[^\/]+/, '');
+	                  if (url.path != url) header = header.replace(req.path, url);
+	              }
+	            
+	              buffer = buffer_add(new Buffer(header, 'utf8'), buffer.slice(_body_pos));
+	          }
+
             // encrypt in local, decrypt for proxy in buffer_add
             for (var i = 0; i < buffer.length; i++) {
                 buffer[i] += 1;
