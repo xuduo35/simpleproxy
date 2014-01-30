@@ -1,33 +1,157 @@
 var net = require('net');
 var serverip = "127.0.0.1";
-var local_port = 8894;
-var localflag = 0;
+var serverport = 8893;
+var connectproxy = 0;
+var standalone = 0;
 
-if (process.argv.length >= 3) {
-    if (/^\d+\.\d+\.\d+\.\d+$/.test(process.argv[2])) {
-        serverip = process.argv[2];
-    } else if ((process.argv[2] == "--help") || (process.argv[2] != "localhost")) {
-        console.log("Usage:\n\tlocal pc:\trun - node testproxy.js\n\tremote pc:\tnode testproxy.js (localhost|remoteIP)\n")
+function usage() {
+    console.log("usage:");
+    console.log("\tnode testproxy.js standalone");
+    console.log("\tnode testproxy.js (localhost|remoteIP)");
+    console.log("\tnode testproxy.js proxy");
+}
+
+if ((process.argv.length < 3) || (process.argv[2] == "--help")) {
+    usage();
+    return;
+}
+
+if (process.argv[2] == "standalone") {
+    standalone = 1;
+} else if (process.argv[2] == "localhost") {
+    connectproxy = 1;
+} else if (/^\d+\.\d+\.\d+\.\d+$/.test(process.argv[2])) {
+    connectproxy = 1;
+    serverip = process.argv[2];
+} else if (process.argv[2] == "proxy") {
+    serverport += 1;
+} else {
+    usage();
+    return;
+}
+
+function encrypt(data) {
+    for (var i = 0; i < data.length; i++) {
+        data[i] += -1;
+    }
+
+    return data;
+}
+
+function decrypt(data) {
+    for (var i = 0; i < data.length; i++) {
+        data[i] -= -1;
+    }
+
+    return data;
+}
+
+function startService(client, options, cryptfuncs, connopts) {
+        //建立到目标服务器的连接
+        var server =  net.createConnection(options);
+        var client_closeflag = 0;
+        var server_closeflag = 0;
+
+        client.pause();
+        server.pause();
+
+        //交换服务器与浏览器的数据
+        client.on("data", function (data) {
+            if (!server_closeflag) {
+                server.write(cryptfuncs ? cryptfuncs.encrypt(data) : data);
+            }
+        });
+
+        server.on("data", function (data) {
+            if (!client_closeflag) {
+                client.write(cryptfuncs ? cryptfuncs.decrypt(data) : data);
+            }
+        });
+          
+        client.on("end", function () {
+            client_closeflag = 1;
+            server.end();
+        });
+        
+        server.on("end", function () {
+            server_closeflag = 1;
+            client.end();
+        });
+
+        client.on("error", function () {
+            client_closeflag = 1;
+            server.destroy();
+        });
+        
+        server.on("error", function () {
+            server_closeflag = 1;
+            client.destroy();
+        });
+
+        client.on("timeout", function () {
+            server.destroy();
+            client.destroy();
+        });
+        
+        server.on("timeout", function () {
+            server.destroy();
+            client.destroy();
+        });
+
+        server.on("connect", function (socket) {
+            client.resume();
+            server.resume();
+
+            if (connopts) {
+                connopts.connectfunc(client, server, connopts.req, connopts.buffer);
+            }
+        });
+}
+
+function standAloneConnectAction(client, server, req, buffer) {
+    if (req.method == 'CONNECT') {
+        client.write(new Buffer("HTTP/1.1 200 Connection established\r\nConnection: close\r\n\r\n"));
+    } else {
+        server.write(buffer);
+    }
+}
+
+function proxyConnectAction(client, server, req, buffer) {
+    if (req.method == 'CONNECT') {
+        client.write(encrypt(new Buffer("HTTP/1.1 200 Connection established\r\nConnection: close\r\n\r\n")));
+    } else {
+        server.write(buffer);
+    }
+}
+
+//在本地创建一个server监听本地serverport端口
+net.createServer({ allowHalfOpen: true}, function (client) {
+    if (connectproxy) {
+        startService(
+            client,
+            { allowHalfOpen: true, port: serverport + 1, host: serverip},
+            { 'encrypt': encrypt, 'decrypt': decrypt },
+            null
+        );
+
         return;
     }
 
-    local_port = 8893;
-    localflag = 1;
-}
-
-//在本地创建一个server监听本地local_port端口
-net.createServer({ allowHalfOpen: true}, function (client) {
     //首先监听浏览器的数据发送事件，直到收到的数据包含完整的http请求头
     var buffer = new Buffer(0);
     
     client.on('data', function (data) {
         buffer = buffer_add(buffer, data);
-        
-        if (buffer_find_body(buffer) == -1) return;
+
+        if (buffer_find_body(buffer) < 0) {
+            return;
+        }
         
         var req = parse_request(buffer);
         
-        if (req === false) return;
+        if (!req) {
+            return;
+        }
         
         client.removeAllListeners('data');
         relay_connection(req);
@@ -36,101 +160,53 @@ net.createServer({ allowHalfOpen: true}, function (client) {
     //从http请求头部取得请求信息后，继续监听浏览器发送数据，同时连接目标服务器，并把目标服务器的数据传给浏览器
     function relay_connection(req) {
         console.log(req.method + ' ' + req.host + ':' + req.port);
-        
-        if (localflag) {
-	        //如果请求不是CONNECT方法（GET, POST），那么替换掉头部的一些东西
-	          if (req.method != 'CONNECT') {
-	              //先从buffer中取出头部
-	              var _body_pos = buffer_find_body(buffer);
-	            
-	              if (_body_pos < 0) _body_pos = buffer.length;
-	            
-	              var header = buffer.slice(0, _body_pos).toString('utf8');
-	            
-	              //替换connection头
-	              header = header.replace(/(proxy-)?connection\:.+\r\n/ig, '')
-	                  .replace(/Keep-Alive\:.+\r\n/i, '')
-	                  .replace("\r\n", '\r\nConnection: close\r\n');
-	            
-	              //替换网址格式(去掉域名部分)
-	              if (req.httpVersion == '1.1') {
-	                  var url = req.path.replace(/http\:\/\/[^\/]+/, '');
-	                  if (url.path != url) header = header.replace(req.path, url);
-	              }
-	            
-	              buffer = buffer_add(new Buffer(header, 'utf8'), buffer.slice(_body_pos));
-	          }
 
-            // encrypt in local, decrypt for proxy in buffer_add
-            for (var i = 0; i < buffer.length; i++) {
-                buffer[i] += 1;
+        //如果请求不是CONNECT方法（GET, POST），那么替换掉头部的一些东西
+        if (req.method != 'CONNECT') {
+            //先从buffer中取出头部
+            var _body_pos = buffer_find_body(buffer);
+
+            if (_body_pos < 0) _body_pos = buffer.length;
+
+            var header = buffer.slice(0, _body_pos).toString('utf8');
+
+            //替换connection头
+            header = header.replace(/(proxy-)?connection\:.+\r\n/ig, '')
+                .replace(/Keep-Alive\:.+\r\n/i, '')
+                .replace("\r\n", '\r\nConnection: close\r\n');
+            
+            //替换网址格式(去掉域名部分)
+            if (req.httpVersion == '1.1') {
+                var url = req.path.replace(/http\:\/\/[^\/]+/, '');
+                if (url.path != url) header = header.replace(req.path, url);
             }
+            
+            buffer = buffer_add(new Buffer(header, 'utf8'), buffer.slice(_body_pos));
         }
-        
-        client.pause();
-        
-        //交换服务器与浏览器的数据
-        client.on("data", function (data) {
-            if (!server.closeflag) {
-                server.write(data);
-            }
-        });
 
-        //建立到目标服务器的连接
-        var server =  net.createConnection(
-            localflag ? { allowHalfOpen: true, port: 8894, host: serverip} : { allowHalfOpen: true, port: req.port, host: req.host}
+        // second proxy mode
+        if (!standalone) {
+            startService(
+                client,
+                { allowHalfOpen: true, port: req.port, host: req.host},
+                { 'encrypt': decrypt, 'decrypt': encrypt },
+                { 'connectfunc': proxyConnectAction, 'req': req, 'buffer': buffer }
             );
 
-        server.pause();
-        
-        server.on("data", function (data) {
-            if (!client.closeflag) {
-                // encrypt for local, decrypt for proxy
-                for (var i = 0; i < data.length; i++) {
-                    data[i] += localflag ? 1 : -1;
-                }
-                    
-                client.write(data);
-            }
-        });
-	      
-        client.on("end", function () {
-            client.closeflag = 1;
-            server.end();
-        });
-        
-        server.on("end", function () {
-            server.closeflag = 1;
-            client.end();
-        });
+            return;
+        }
 
-        client.on("error", function () {
-            client.closeflag = 1;
-            server.destroy();
-        });
-        
-        server.on("error", function () {
-            server.closeflag = 1;
-            client.destroy();
-        });
-
-        server.on("connect", function (socket) {
-            client.resume();
-            server.resume();
-            
-            if (req.method == 'CONNECT') {
-                if (localflag) {
-                    server.write(buffer);
-                    client.write(new Buffer("HTTP/1.1 200 Connection established\r\nConnection: close\r\n\r\n"));
-                }
-            } else {
-                server.write(buffer);
-            }
-        });
+        // standalone proxy mode
+        startService(
+            client,
+            { allowHalfOpen: true, port: req.port, host: req.host},
+            null,
+            { 'connectfunc': standAloneConnectAction, 'req': req, 'buffer': buffer }
+        );
     }
-}).listen(local_port);
+}).listen(serverport);
 
-console.log('Proxy server running at ' + serverip + ':' + local_port);
+console.log('Proxy server running at ' + serverip + ':' + serverport);
 
 //处理各种错误
 process.on('uncaughtException', function (err) {
@@ -184,11 +260,9 @@ function parse_request(buffer) {
  两个buffer对象加起来
 */
 function buffer_add(buf1, buf2) {
-    if (!localflag) {
-        // decrypt
-        for (var i = 0; i < buf2.length; i++) {
-            buf2[i] -= 1;
-        }
+    // second proxy mode
+    if (!standalone) {
+        decrypt(buf2);
     }
 
     var re = new Buffer(buf1.length + buf2.length);
