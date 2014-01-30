@@ -11,10 +11,9 @@ set Proxy IP/port in web browser to 127.0.0.1/8893 on your local PC.
 ```
 run 'node testproxy.js standalone' on your server if you only need a normal proxy instead of a double-steps-proxy.
 ```
-Enjoy the journey.
 
 ### Basic idea and code
-Basic idea and code comes from this article. Thanks to the poster and the original auther.
+Basic idea and code comes from this article. Thanks to the poster and the original author.
 http://cnodejs.org/topic/4f16442ccae1f4aa27001101
 
 ### License
