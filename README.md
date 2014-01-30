@@ -1,12 +1,15 @@
 ### Usage
 ```
-run 'node testproxy.js' on your VPS.
+run 'node testproxy.js proxy' on your VPS.
 ```
 ```
 run 'node testproxy.js VPS_IP' on your local PC.
 ```
 ```
 set Proxy IP/port in web browser to 127.0.0.1/8893 on your local PC.
+```
+```
+run 'node testproxy.js standalone' on your server if you only need a normal proxy instead of a double-steps-proxy.
 ```
 Enjoy the journey.
 
