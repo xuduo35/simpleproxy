@@ -3,6 +3,8 @@ var serverip = "127.0.0.1";
 var serverport = 8893;
 var connectproxy = 0;
 var standalone = 0;
+var proxyrunning = 1;
+var proxypass = '123456'; // please change this password
 
 function usage() {
     console.log("usage:");
@@ -124,6 +126,51 @@ function proxyConnectAction(client, server, req, buffer) {
     }
 }
 
+if (!connectproxy) {
+    net.createServer(function(client){
+        var oppass = '';
+        var fullmessage = 0;
+
+        client.on('data', function (data) {
+            oppass += data;
+
+            /*
+             * it's easy to use telnet for start/stop proxy server on VPS from local PC
+             * telnet your_server_ip 8000
+             * to start, input 'O:123456'
+             * to stop, 'C:123456'
+             */
+            if (!fullmessage && (oppass.length >= 8)) {
+                fullmessage = 1;
+
+                var op = oppass.substr(0, 1);
+                var pass = oppass.substr(2).replace(/(\r|\n)+$/g, "");
+
+                if (pass == proxypass) {
+                    if (op == "O") {
+                        proxyrunning = 1;
+                        console.log('start server successfully!');
+                        client.write('start server successfully!\r\n', function(e){
+                            client.end();
+                        });
+                    } else if (op == "C") {
+                        proxyrunning = 0;
+                        console.log('stop server successfully!');
+                        client.write('stop server successfully!\r\n', function(e){
+                            client.end();
+                        });
+                    }
+                } else {
+                    console.log('authentication failed!');
+                    client.write('authentication failed!\r\n', function(e){
+                        client.end();
+                    });
+                }
+            }
+        });
+    }).listen(8000);
+}
+
 //在本地创建一个server监听本地serverport端口
 net.createServer({ allowHalfOpen: true}, function (client) {
     if (connectproxy) {
@@ -135,6 +182,14 @@ net.createServer({ allowHalfOpen: true}, function (client) {
         );
 
         return;
+    }
+
+    if (!proxyrunning) {
+            client.destroy();
+
+            console.log("proxy not running, please start it first!");
+
+            return;
     }
 
     //首先监听浏览器的数据发送事件，直到收到的数据包含完整的http请求头
