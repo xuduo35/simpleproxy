@@ -54,6 +54,8 @@ function startService(client, options, cryptfuncs, connopts) {
         var client_closeflag = 0;
         var server_closeflag = 0;
 
+        server.setKeepAlive(true, 15 * 1000);
+
         client.pause();
         server.pause();
 
@@ -192,6 +194,20 @@ net.createServer({ allowHalfOpen: true}, function (client) {
             return;
     }
 
+    client.setKeepAlive(true, 15 * 1000);
+
+    client.on("end", function () {
+        client.end();
+    });
+    
+    client.on("error", function () {
+        client.destroy();
+    });
+
+    client.on("timeout", function () {
+        client.destroy();
+    });
+
     //首先监听浏览器的数据发送事件，直到收到的数据包含完整的http请求头
     var buffer = new Buffer(0);
     
@@ -209,6 +225,10 @@ net.createServer({ allowHalfOpen: true}, function (client) {
         }
         
         client.removeAllListeners('data');
+        client.removeAllListeners('end');
+        client.removeAllListeners('error');
+        client.removeAllListeners('timeout');
+
         relay_connection(req);
     });
     
